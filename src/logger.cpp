@@ -11,9 +11,11 @@
 
 #include "ros/ros.h"
 #include "std_msgs/String.h"
-#include "rostune/Logline.h"
+#include "rostune/NodeLogline.h"
+#include "rostune/TopicLogline.h"
 
-void loggerCallback( const rostune::Logline::ConstPtr& msg )
+
+void nodeLoggerCallback( const rostune::NodeLogline::ConstPtr& msg )
 {
 
   ROS_INFO( "Recv'ed: [%s, cputime: %lu, walltime: %lu + %lu, cputimediff: %lu, walltimediff: %lu, all mem: %lu, res mem: %lu]",
@@ -29,12 +31,22 @@ void loggerCallback( const rostune::Logline::ConstPtr& msg )
 	    msg->all_memory/1024/2014, msg->resident_memory/1024/1024 );
 }
 
+void topicLoggerCallback( const rostune::TopicLogline::ConstPtr& msg )
+{
+
+  ROS_INFO( "Recv'ed: [%s]",
+	    msg->topic_name.c_str() );
+  
+}
+
+
 
 int main( int argc, char **argv )
 {
   ros::init( argc, argv, "logger" );
   ros::NodeHandle n;
-  ros::Subscriber sub = n.subscribe( "cpuload", 1000, loggerCallback );
+  ros::Subscriber sub1 = n.subscribe( "node_stats", 1000, nodeLoggerCallback );
+  ros::Subscriber sub2 = n.subscribe( "topic_stats", 1000, topicLoggerCallback );
   ros::spin();
   return 0;
 }

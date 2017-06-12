@@ -14,24 +14,32 @@
 #include "ros/ros.h"
 // %EndTag(ROS_HEADER)%
 
-#include <sstream>
+#include "topic_tools/shape_shifter.h"
 
+namespace topicstats {
 
-#include "ros/master.h"
-#include "ros/xmlrpc_manager.h"
+  class TopicStats{
 
-namespace nodestats {
+    public:
+      ros::Subscriber subscriber;
+      double avg_bytes_per_msg;
+      double avg_msgs_per_sec;
+      double bytes_per_second;
+      std::string topic_name;
+      int num_of_messages;
+      double total_bytes;
 
-  void cpuload( int, uint64_t&, uint64_t&, uint64_t& );
+      TopicStats(){}
+      ~TopicStats(){}
+      TopicStats(const std::string);
+      void callback(const topic_tools::ShapeShifter::ConstPtr&);
+      bool operator==(const TopicStats&) const;
+      bool operator==(const std::string&) const;
 
-  int getPid( std::string nodeName );
+    protected:
+      double start_time;
 
-  bool execute_at( const std::string url,
-           const std::string& method, const XmlRpc::XmlRpcValue& request,
-           XmlRpc::XmlRpcValue& response, XmlRpc::XmlRpcValue& payload,
-           bool wait_for_master, ros::WallDuration g_retry_timeout );
-
-  void parseUrl( std::string url, std::string& host, uint32_t& port );
+  };
 
 }
 

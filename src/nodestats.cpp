@@ -51,7 +51,7 @@ int getPid( std::string nodeName )
 
 
 void cpuload( int pid,
-	      uint64_t &cputime, uint64_t &all_mem, uint64_t &resident_mem )
+      uint64_t &cputime, uint64_t &all_mem, uint64_t &resident_mem )
 {
   FILE *fp;
   std::stringstream pathname;
@@ -69,8 +69,8 @@ void cpuload( int pid,
     fgets( line, sizeof line, fp );
     ROS_DEBUG( "proc line, %d bytes: %s", strlen(line), line );
     sscanf( line,  
-	    "%*d %*s %*c %*d %*d %*d %*d %*d %*u %*lu %*lu %*lu %*lu %lu %lu %lu %lu %*ld %*ld %ld %*ld %llu %lu %ld %*lu %*lu %*s",
-                                                      &utime, &stime, &cutime, &cstime,    &num_threads, &starttime, &vsize, &rss );
+    "%*d %*s %*c %*d %*d %*d %*d %*d %*u %*lu %*lu %*lu %*lu %lu %lu %lu %lu %*ld %*ld %ld %*ld %llu %lu %ld %*lu %*lu %*s",
+    &utime, &stime, &cutime, &cstime, &num_threads, &starttime, &vsize, &rss );
     fclose( fp );
 
     ROS_DEBUG( "Extracted: utime %lu, stime %lu, cutime %lu, cstime %lu, num_threads: %ld starttime: %llu vsize: %lu rss: %ld", utime, stime, cutime, cstime, num_threads, starttime, vsize, rss );
@@ -85,7 +85,7 @@ void cpuload( int pid,
   }    
   ROS_DEBUG( "Clockrate: %ld page size %d", clockrate, sysconf(_SC_PAGE_SIZE) );
   ROS_DEBUG( "Computed: cputime (msec) %lu, allmem: %lu, resmem %lu",
-	     cputime, all_mem, resident_mem );
+     cputime, all_mem, resident_mem );
 }
 
 /*
@@ -267,20 +267,20 @@ bool execute_at( std::string url, const std::string& method, const XmlRpc::XmlRp
  #if defined(__APPLE__)
        boost::mutex::scoped_lock lock(g_xmlrpc_call_mutex);
  #endif
- 
+
        b = c->execute(method.c_str(), request, response);
      }
- 
+
      ok = !ros::isShuttingDown() && !ros::XMLRPCManager::instance()->isShuttingDown();
- 
+
      if( !b && ok ) {
        if( !printed && wait_for_master ) {
          ROS_ERROR("[%s] Failed to contact master at [%s:%d].  %s", method.c_str(), master_host.c_str(), master_port, wait_for_master ? "Retrying..." : "");
          printed = true;
        }
- 
+
        if( !wait_for_master ) {
-	 ros::XMLRPCManager::instance()->releaseXMLRPCClient(c);
+         ros::XMLRPCManager::instance()->releaseXMLRPCClient(c);
          return false;
        }
 
@@ -288,31 +288,31 @@ bool execute_at( std::string url, const std::string& method, const XmlRpc::XmlRp
        // not visible from here. Should be declared in ros/master.h so I can read it.
        if( !g_retry_timeout.isZero() && (ros::WallTime::now() - start_time) >= g_retry_timeout ) {
          ROS_ERROR("[%s] Timed out trying to connect to the master after [%f] seconds", method.c_str(), g_retry_timeout.toSec());
-	 ros::XMLRPCManager::instance()->releaseXMLRPCClient(c);
+         ros::XMLRPCManager::instance()->releaseXMLRPCClient(c);
          return false;
        }
- 
+
        ros::WallDuration(0.05).sleep();
        slept = true;
      }
      else {
        if (!ros::XMLRPCManager::instance()->validateXmlrpcResponse(method, response, payload)) {
-	 ros::XMLRPCManager::instance()->releaseXMLRPCClient(c);
-	 return false;
+        ros::XMLRPCManager::instance()->releaseXMLRPCClient(c);
+        return false;
        }
        
        break;
      }
- 
+
      ok = !ros::isShuttingDown() && !ros::XMLRPCManager::instance()->isShuttingDown();
     } while(ok);
- 
+
   if (ok && slept) {
     ROS_INFO("Connected to master at [%s:%d]", master_host.c_str(), master_port);
   }
- 
+
   ros::XMLRPCManager::instance()->releaseXMLRPCClient(c);
- 
+
   return b;
 }
  
@@ -340,7 +340,7 @@ void parseUrl( std::string url, std::string& host, uint32_t& port )
       }
       std::string strPort = url.substr( pos+1, ppos-pos-1 );
       if( strPort.size() > 0 ) {
-	port = atoi( strPort.c_str() );
+        port = atoi( strPort.c_str() );
       }
       else { port = 0; }
     }

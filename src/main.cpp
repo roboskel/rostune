@@ -17,6 +17,13 @@
 #include <algorithm>
 #include <sstream>
 #include "nodestats.h"
+#include "topicstats.h"
+
+#include "rostune/SingleTopicStats.h"
+#include "rostune/MultipleTopicStats.h"
+
+#include <thread>
+#include <forward_list>
 
 #define MAX_NODES  1024
 #define MAX_TOPICS 1024
@@ -26,9 +33,16 @@ std::string  nodeNames[MAX_NODES];
 uint64_t  prevcputimes[MAX_NODES];
 uint64_t prevwalltimes[MAX_NODES];
 int num_nodes = 0;
+bool first_time = true;
 
-std::string  topicNames[MAX_TOPICS];
-int num_topics = 0;
+std::forward_list<topicstats::TopicStats> monitored_topics;
+std::vector<std::string> excluded_nodes;
+std::vector<std::string> excluded_topics;
+
+
+void spinToWin(){
+  ros::spin();
+}
 
 
 
@@ -44,7 +58,7 @@ void mknodemsg( rostune::NodeLogline& msg, const std::string name, const int i )
   msg.all_memory = all_mem;
   msg.resident_memory = resident_mem;
   msg.diffcputime = cputime - prevcputimes[i];
-  uint64_t wtime = msg.header.stamp.sec + msg.header.stamp.nsec/1000;
+  uint64_t wtime = msg.header.stamp.sec + msg.header.stamp.nsec / 1000;
   msg.diffwalltime = wtime - prevwalltimes[i];
   prevcputimes[i] = cputime;
   prevwalltimes[i] = wtime;
@@ -57,20 +71,33 @@ void mktopicmsg( rostune::TopicLogline& msg, const std::string name, const int i
   ROS_INFO( "XXX: %s", name.c_str() );
 }
 
+
 int main( int argc, char **argv )
 {
   ros::init( argc, argv, "rostune" );
   ros::NodeHandle n;
-  ros::Publisher nodestats_pub = n.advertise<rostune::NodeLogline>( "node_stats", 1000 );
-  ros::Publisher topicstats_pub = n.advertise<rostune::TopicLogline>( "topic_stats", 1000 );
+  ros::Publisher nodestats_pub = n.advertise<rostune::NodeLogline>( "rostune/node_stats", 1000 );
+  ros::Publisher topicstats_pub = n.advertise<rostune::MultipleTopicStats>("rostune/topic_stats", 1);
   ros::Rate loop_rate( 10 );
   static const ros::TopicManagerPtr& tp = ros::TopicManager::instance();
 
-  /**
-   * A count of how many messages we have sent. This is used to create
-   * a unique string for each message.
-   */
-  int count = 0;
+  n.getParam("rostune/excluded_nodes", excluded_nodes);
+  n.getParam("rostune/excluded_topics", excluded_topics);
+
+  // Excluded nodes by default
+  if(excluded_nodes.size() == 0){
+    excluded_topics.push_back("/rosout");
+    excluded_topics.push_back("/rostune");
+  }
+
+  // Excluded topics by default
+  if(excluded_topics.size() == 0){
+    excluded_topics.push_back("/rosout");
+    excluded_topics.push_back("/rosout_agg");
+    excluded_topics.push_back("/rostune/node_stats");
+    excluded_topics.push_back("/rostune/topic_stats");
+  }
+
 
   while( ros::ok() )
   {
@@ -94,16 +121,16 @@ int main( int argc, char **argv )
 	nodelist.pop_back();
       }
       else {
-	// node i is gone
-	if( i < num_nodes ) {
-	  // overwrite with the last node, unless this is the last node
-	  nodeNames[i] = nodeNames[num_nodes];
-	  prevcputimes[i] = prevcputimes[num_nodes];
-	  prevwalltimes[i] = prevwalltimes[num_nodes];
-	  --i; // make the loop go over the new i
-	}
-	// either way, the array is now shorter
-	--num_nodes;
+      // node i is gone
+      if( i < num_nodes ) {
+        // overwrite with the last node, unless this is the last node
+        nodeNames[i] = nodeNames[num_nodes];
+        prevcputimes[i] = prevcputimes[num_nodes];
+        prevwalltimes[i] = prevwalltimes[num_nodes];
+        --i; // make the loop go over the new i
+      }
+      // either way, the array is now shorter
+      --num_nodes;
       }
     }
 
@@ -125,80 +152,93 @@ int main( int argc, char **argv )
 
     ros::master::V_TopicInfo topiclist;
     succ = ros::master::getTopics( topiclist );
-    if( !succ ) { loop_rate.sleep(); break; }
 
-    /*
-    for(  
-      const ros::master::TopicInfo& info = *it;
-      std::cout << "Topic : " << it - topiclist.begin() << ": " << info.name << " -> " << info.datatype << std::endl;
-      }*/
+    if (succ) {
 
-    //TODO: if debug
-    std::stringstream str;
-    for( int k = 0; k < num_topics; ++k ) { str << topicNames[k] << " "; }
-    ROS_DEBUG( "Active topics: %s", str.str().c_str() );
+      for( auto it = monitored_topics.begin(); it != monitored_topics.end(); it++ ) {	
+	// Look for the topic in the list of topics *with at least two subscribers*.
+	// Topics with one subscriber (myself) are treated as non-existing, to avoid
+	// forcing the circulation of messages that wouldn't otherwise be circulated
+	// as there are no subscribers.
 
-    for( int i = 0; i < num_topics; ++i ) {
-      // Look for the topic in the list of topics *with at least one subscriber*.
-      // Topics without subscribers are treated as non-existing, to avoid forcing
-      // the circulation of messages that wouldn't otherwise be circulated
-      // as there are no subscribers.
 
-      // NOTE: The for loop below actually means
-      // ros::master::V_TopicInfo::iterator it = std::find( topiclist.begin(), topiclist.end(), topicNames[i] );
-      // but cannot use std::find() because TopicInfo does not implement operator==
-      ros::master::V_TopicInfo::iterator it;
-      for( it = topiclist.begin();
-	   (it != topiclist.end()) && (topicNames[i] != it->name); ++it);
+	// NOTE: The for loop below looks for *it inside topiclist
+	ros::master::V_TopicInfo::iterator it2;
+	for( it2 = topiclist.begin();
+	     (it2 != topiclist.end()) && !(*it == it2->name); ++it2 );
 
-      if( it != topiclist.end() ) {
-	ROS_DEBUG( "Found %s in list of topics", it->name.c_str() );
-	ROS_DEBUG( "Branch 1: %s has %d subscribers", it->name.c_str(), tp->getNumSubscribers(it->name) );
-      }
-      if( it != topiclist.end() && tp->getNumSubscribers(it->name) > 0 ) {
-	// topic i is still here and has at least one subscriber
-	rostune::TopicLogline msg;
-	mktopicmsg( msg, it->name, i );
-	topicstats_pub.publish( msg );
-	
-	// remove from vector, no need to look here again as topicnames appear once
-	*it = topiclist.back();
-	topiclist.pop_back();
-      }
-      else {
-	// topic i is gone or has no subscribers
-	if( i < num_topics ) {
-	  // overwrite with the last topic, unless this is the last topic
-	  topicNames[i] = topicNames[num_nodes];
-	  // TODO: copy other stats
-	  //prevcputimes[i] = prevcputimes[num_nodes];
-	  //prevwalltimes[i] = prevwalltimes[num_nodes];
-	  --i; // make the loop go over the new i
+	if( it2 != topiclist.end() ) {
+	  ROS_DEBUG( "Found %s in list of topics", it->topic_name.c_str() );
+	  ROS_DEBUG( "Branch 1: %s has %d subscribers", it->topic_name.c_str(), tp->getNumSubscribers(it->topic_name) );
 	}
-	// either way, the array is now shorter
-	--num_topics;
+	
+	if( it2 != topiclist.end() && tp->getNumSubscribers(it->topic_name) > 1 ) {
+	  // topic i is still here and has at least two subscribers (one is myself)
+	  // remove from vector, no need to look here again as topicnames appear once
+	  *it2 = topiclist.back();
+	  topiclist.pop_back();
+	}
+	// If we need to make a distinction between topic not exists and no subs:
+	//else if( it2 == topiclist.end() ) {
+	//  // DO something about topic disappeared
+	//}
+	else {
+	  // the topic does not exist any more or the
+	  // topic exists, but has no subscribers except myself
+	  it->subscriber.shutdown();
+	}
       }
-    }
-    
-    // now add what's left of the topiclist to my topics
-    for( ros::master::V_TopicInfo::iterator q = topiclist.begin(); q != topiclist.end(); ++q ) {
-      ROS_DEBUG( "Branch 2: %s has %d subscribers", q->name.c_str(), tp->getNumSubscribers(q->name) );
-      //const ros::master::TopicInfo& info = *q;
-      rostune::TopicLogline msg;
-      if( num_topics < MAX_TOPICS ) {
-	++num_topics;
-	topicNames[num_topics] = q->name;
-	// FIX prevcputimes[num_topics] = 0;
-	// FIX prevwalltimes[num_topics] = 0;
-	mktopicmsg( msg, q->name, num_nodes );
-	topicstats_pub.publish( msg );
-      }
-    }
-    
-    ros::spinOnce();
-    loop_rate.sleep();
-    ++count;
 
+      std::cout << "XXXX ";
+      for( ros::master::V_TopicInfo::iterator q = topiclist.begin(); q != topiclist.end(); ++q ) {
+	std::cout << q->name << "(" << tp->getNumSubscribers(q->name) << ") ";
+      }
+	// now add what's left of the topiclist to my topics
+      for( ros::master::V_TopicInfo::iterator q = topiclist.begin(); q != topiclist.end(); ++q ) {
+	ROS_DEBUG( "Branch 2: %s has %d subscribers", q->name.c_str(), tp->getNumSubscribers(q->name) );
+	
+	// check that this topic should not be excluded
+	bool exclude_this = false;
+	for(unsigned i=0;i<excluded_topics.size();i++){
+	  if(q->name.compare(excluded_topics[i]) == 0){
+	    exclude_this = true;
+	    break;
+	  }
+	}
+	
+	if( !exclude_this ) {
+	  monitored_topics.emplace_front(q->name);
+	  monitored_topics.front().subscriber = n.subscribe(q->name, 1, &topicstats::TopicStats::callback, &monitored_topics.front());
+	  ROS_INFO( "Subscribed to %s", q->name.c_str() );
+	}
+      }
+    }
+	
+    rostune::MultipleTopicStats mts;
+    std::vector<rostune::SingleTopicStats> stats_data;
+
+    for (auto it = monitored_topics.begin(); it != monitored_topics.end(); it++) {
+      rostune::SingleTopicStats sts;
+      sts.name = it->topic_name;
+      sts.num_of_messages = it->num_of_messages;
+      sts.bytes_per_second = it->bytes_per_second;
+      sts.avg_bytes_per_msg = it->avg_bytes_per_msg;
+      sts.avg_msgs_per_sec = it->avg_msgs_per_sec;
+      sts.total_bytes = it->total_bytes;
+      stats_data.push_back(sts);
+    }
+
+    mts.header.stamp = ros::Time::now();
+    mts.topics = stats_data;
+    topicstats_pub.publish(mts);
+
+    if(first_time){
+      std::thread spinner_thread(spinToWin);
+      spinner_thread.detach();
+      first_time = false;
+    }
+
+    loop_rate.sleep();
   }
   return 0;
 }

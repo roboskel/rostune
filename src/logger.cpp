@@ -19,16 +19,16 @@ void nodeLoggerCallback( const rostune::NodeLogline::ConstPtr& msg )
 {
 
   ROS_INFO( "Recv'ed: [%s, cputime: %lu, walltime: %lu + %lu, cputimediff: %lu, walltimediff: %lu, all mem: %lu, res mem: %lu]",
-	     msg->node_name.c_str(),
-	     msg->cputime, msg->header.stamp.sec, msg->header.stamp.nsec,
-	     msg->diffcputime, msg->diffwalltime,
-	     msg->all_memory, msg->resident_memory );
+         msg->node_name.c_str(),
+         msg->cputime, msg->header.stamp.sec, msg->header.stamp.nsec,
+         msg->diffcputime, msg->diffwalltime,
+         msg->all_memory, msg->resident_memory );
   
   float relcputimediff = ((float)msg->diffcputime) / msg->diffwalltime;
 
   ROS_INFO( "Computed: [%s, relative cputime diff: %0.6f, vmem: %luMB, resmem: %luMB]",
-	    msg->node_name.c_str(), relcputimediff,
-	    msg->all_memory/1024/2014, msg->resident_memory/1024/1024 );
+        msg->node_name.c_str(), relcputimediff,
+        msg->all_memory/1024/2014, msg->resident_memory/1024/1024 );
 }
 
 void topicLoggerCallback( const rostune::TopicLogline::ConstPtr& msg )

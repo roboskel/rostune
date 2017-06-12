@@ -1,0 +1,4 @@
+excluded_nodes: ['/rosout', '/rostune']
+
+# You should also exclude the topics produced by an excluded node!
+excluded_topics: ['/rosout', '/rosout_agg', '/rostune/topic_stats', '/rostune/node_stats']

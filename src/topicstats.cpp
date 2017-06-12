@@ -8,32 +8,46 @@
  * bottom of this file are met.
  */
 
+#include "topicstats.h"
 
-// %Tag(FULLTEXT)%
-// %Tag(ROS_HEADER)%
-#include "ros/ros.h"
-// %EndTag(ROS_HEADER)%
+namespace topicstats {
 
-#include <sstream>
+  TopicStats::TopicStats(const std::string tn){
+    topic_name = tn;
+    avg_bytes_per_msg = 0;
+    avg_msgs_per_sec = 0;
+    bytes_per_second = 0;
+    num_of_messages = 0;
+    total_bytes = 0;
+    start_time = 0;
+  }
 
+  bool TopicStats::operator==(const TopicStats& ts) const{
+    return topic_name == ts.topic_name;
+  }
 
-#include "ros/master.h"
-#include "ros/xmlrpc_manager.h"
+  bool TopicStats::operator==(const std::string& tn) const{
+    return topic_name == tn;
+  }
 
-namespace nodestats {
-
-  void cpuload( int, uint64_t&, uint64_t&, uint64_t& );
-
-  int getPid( std::string nodeName );
-
-  bool execute_at( const std::string url,
-           const std::string& method, const XmlRpc::XmlRpcValue& request,
-           XmlRpc::XmlRpcValue& response, XmlRpc::XmlRpcValue& payload,
-           bool wait_for_master, ros::WallDuration g_retry_timeout );
-
-  void parseUrl( std::string url, std::string& host, uint32_t& port );
+  void TopicStats::callback(const topic_tools::ShapeShifter::ConstPtr& msg) {
+    if(start_time == 0) {
+      start_time = ros::Time::now().toSec();
+    }
+    std::cout << "sCALLBACK " << topic_name << std::endl;
+    double curr_time = ros::Time::now().toSec();
+    num_of_messages++;
+    total_bytes += msg->size();
+    avg_bytes_per_msg = total_bytes / num_of_messages;
+    if(curr_time-start_time > 0){
+      bytes_per_second = total_bytes / (curr_time-start_time);
+      avg_msgs_per_sec = num_of_messages / (curr_time-start_time);
+    }
+    std::cout << "eCALLBACK " << topic_name << std::endl;
+  }
 
 }
+
 
 
 /*
@@ -67,4 +81,5 @@ SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
 CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
 */

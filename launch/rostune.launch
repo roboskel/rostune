@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no" ?>
 <launch>
 
-    <node pkg="rostune" type="rostune" respawn="false" name="rostune" output="screen">
+    <node pkg="rostune" type="rostune" respawn="false" name="$(anon rostune)" output="screen">
         <rosparam file="$(find rostune)/config/parameters.yaml" command="load" />
 
     </node>

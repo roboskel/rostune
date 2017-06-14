@@ -3,4 +3,4 @@ int32 num_of_messages
 float64 bytes_per_second
 float32 avg_msgs_per_sec
 float32 avg_bytes_per_msg
-float64 total_bytes
+int64 total_bytes

@@ -1,7 +1,14 @@
 /*
+ * This file is part of rostune
+ * https://github.com/roboskel/rostune
+ *
  * BSD 3-Clause License
  * Copyright (c) 2017, NCSR "Demokritos"
  * All rights reserved.
+ *
+ * Authors:
+ * Georgios Stavrinos, https://github.com/gstavrinos
+ * Stasinos Konstantopoulos, https://github.com/stasinos
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the conditions at the
@@ -11,6 +18,27 @@
 #include "nodestats.h"
 
 namespace nodestats {
+
+
+NodeStats::NodeStats()
+{
+  prevcputimes = 0;
+  prevwalltimes = 0;
+}
+
+
+NodeStats::NodeStats( const std::string node_name )
+{
+  name = node_name;
+  prevcputimes = 0;
+  prevwalltimes = 0;
+}
+
+bool NodeStats::operator==( const NodeStats& that ) const
+{ return name.compare( that.name ) == 0; }
+
+bool NodeStats::operator==( const std::string& nodeName ) const
+{ return name.compare( nodeName ) == 0; }
 
 int getPid( std::string nodeName )
 {
@@ -132,120 +160,6 @@ From http://man7.org/linux/man-pages/man5/proc.5.html
    toward text, data, or stack space.  This does not
    include pages which have not been demand-loaded in,
    or which are swapped out.
-
-              (27) endcode  %lu  [PT]
-                        The address below which program text can run.
-
-              (28) startstack  %lu  [PT]
-                        The address of the start (i.e., bottom) of the
-                        stack.
-
-              (29) kstkesp  %lu  [PT]
-                        The current value of ESP (stack pointer), as found
-                        in the kernel stack page for the process.
-
-              (30) kstkeip  %lu  [PT]
-                        The current EIP (instruction pointer).
-
-              (31) signal  %lu
-                        The bitmap of pending signals, displayed as a
-                        decimal number.  Obsolete, because it does not
-                        provide information on real-time signals; use
-                        /proc/[pid]/status instead.
-
-              (32) blocked  %lu
-                        The bitmap of blocked signals, displayed as a
-                        decimal number.  Obsolete, because it does not
-                        provide information on real-time signals; use
-                        /proc/[pid]/status instead.
-
-              (33) sigignore  %lu
-                        The bitmap of ignored signals, displayed as a
-                        decimal number.  Obsolete, because it does not
-                        provide information on real-time signals; use
-                        /proc/[pid]/status instead.
-
-              (34) sigcatch  %lu
-                        The bitmap of caught signals, displayed as a decimal
-                        number.  Obsolete, because it does not provide
-                        information on real-time signals; use
-                        /proc/[pid]/status instead.
-
-              (35) wchan  %lu  [PT]
-                        This is the "channel" in which the process is
-                        waiting.  It is the address of a location in the
-                        kernel where the process is sleeping.  The
-                        corresponding symbolic name can be found in
-                        /proc/[pid]/wchan.
-
-              (36) nswap  %lu
-                        Number of pages swapped (not maintained).
-
-              (37) cnswap  %lu
-                        Cumulative nswap for child processes (not
-                        maintained).
-
-              (38) exit_signal  %d  (since Linux 2.1.22)
-                        Signal to be sent to parent when we die.
-
-              (39) processor  %d  (since Linux 2.2.8)
-                        CPU number last executed on.
-
-              (40) rt_priority  %u  (since Linux 2.5.19)
-                        Real-time scheduling priority, a number in the range
-                        1 to 99 for processes scheduled under a real-time
-                        policy, or 0, for non-real-time processes (see
-                        sched_setscheduler(2)).
-
-              (41) policy  %u  (since Linux 2.5.19)
-                        Scheduling policy (see sched_setscheduler(2)).
-                        Decode using the SCHED_* constants in linux/sched.h.
-
-                        The format for this field was %lu before Linux
-                        2.6.22.
-
-              (42) delayacct_blkio_ticks  %llu  (since Linux 2.6.18)
-                        Aggregated block I/O delays, measured in clock ticks
-                        (centiseconds).
-
-              (43) guest_time  %lu  (since Linux 2.6.24)
-                        Guest time of the process (time spent running a
-                        virtual CPU for a guest operating system), measured
-                        in clock ticks (divide by sysconf(_SC_CLK_TCK)).
-
-              (44) cguest_time  %ld  (since Linux 2.6.24)
-                        Guest time of the process's children, measured in
-                        clock ticks (divide by sysconf(_SC_CLK_TCK)).
-
-              (45) start_data  %lu  (since Linux 3.3)  [PT]
-                        Address above which program initialized and
-                        uninitialized (BSS) data are placed.
-
-              (46) end_data  %lu  (since Linux 3.3)  [PT]
-                        Address below which program initialized and
-                        uninitialized (BSS) data are placed.
-
-              (47) start_brk  %lu  (since Linux 3.3)  [PT]
-                        Address above which program heap can be expanded
-                        with brk(2).
-
-              (48) arg_start  %lu  (since Linux 3.5)  [PT]
-                        Address above which program command-line arguments
-                        (argv) are placed.
-
-              (49) arg_end  %lu  (since Linux 3.5)  [PT]
-                        Address below program command-line arguments (argv)
-                        are placed.
-
-              (50) env_start  %lu  (since Linux 3.5)  [PT]
-                        Address above which program environment is placed.
-
-              (51) env_end  %lu  (since Linux 3.5)  [PT]
-                        Address below which program environment is placed.
-
-              (52) exit_code  %d  (since Linux 3.5)  [PT]
-                        The thread's exit status in the form reported by
-                        waitpid(2).
 */
 
 

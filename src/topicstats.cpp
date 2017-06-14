@@ -1,12 +1,20 @@
 /*
+ * This file is part of rostune
+ * https://github.com/roboskel/rostune
+ *
  * BSD 3-Clause License
  * Copyright (c) 2017, NCSR "Demokritos"
  * All rights reserved.
+ *
+ * Authors:
+ * Georgios Stavrinos, https://github.com/gstavrinos
+ * Stasinos Konstantopoulos, https://github.com/stasinos
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the conditions at the
  * bottom of this file are met.
  */
+
 
 #include "topicstats.h"
 
@@ -20,21 +28,21 @@ namespace topicstats {
     num_of_messages = 0;
     total_bytes = 0;
     start_time = 0;
+    subscribed = false;
   }
 
   bool TopicStats::operator==(const TopicStats& ts) const{
-    return topic_name == ts.topic_name;
+    return topic_name.compare(ts.topic_name) == 0;
   }
 
   bool TopicStats::operator==(const std::string& tn) const{
-    return topic_name == tn;
+    return topic_name.compare(tn) == 0;
   }
 
   void TopicStats::callback(const topic_tools::ShapeShifter::ConstPtr& msg) {
     if(start_time == 0) {
       start_time = ros::Time::now().toSec();
     }
-    std::cout << "sCALLBACK " << topic_name << std::endl;
     double curr_time = ros::Time::now().toSec();
     num_of_messages++;
     total_bytes += msg->size();
@@ -43,7 +51,6 @@ namespace topicstats {
       bytes_per_second = total_bytes / (curr_time-start_time);
       avg_msgs_per_sec = num_of_messages / (curr_time-start_time);
     }
-    std::cout << "eCALLBACK " << topic_name << std::endl;
   }
 
 }

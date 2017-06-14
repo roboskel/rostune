@@ -1,7 +1,14 @@
 /*
+ * This file is part of rostune
+ * https://github.com/roboskel/rostune
+ *
  * BSD 3-Clause License
  * Copyright (c) 2017, NCSR "Demokritos"
  * All rights reserved.
+ *
+ * Authors:
+ * Georgios Stavrinos, https://github.com/gstavrinos
+ * Stasinos Konstantopoulos, https://github.com/stasinos
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the conditions at the
@@ -28,6 +35,7 @@ namespace topicstats {
       std::string topic_name;
       int num_of_messages;
       double total_bytes;
+      bool subscribed;
 
       TopicStats(){}
       ~TopicStats(){}

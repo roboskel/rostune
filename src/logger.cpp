@@ -1,7 +1,14 @@
 /*
+ * This file is part of rostune
+ * https://github.com/roboskel/rostune
+ *
  * BSD 3-Clause License
  * Copyright (c) 2017, NCSR "Demokritos"
  * All rights reserved.
+ *
+ * Authors:
+ * Georgios Stavrinos, https://github.com/gstavrinos
+ * Stasinos Konstantopoulos, https://github.com/stasinos
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the conditions at the
@@ -9,10 +16,12 @@
  */
 
 
+
 #include "ros/ros.h"
 #include "std_msgs/String.h"
 #include "rostune/NodeLogline.h"
-#include "rostune/TopicLogline.h"
+#include "rostune/SingleTopicStats.h"
+#include "rostune/MultipleTopicStats.h"
 
 
 void nodeLoggerCallback( const rostune::NodeLogline::ConstPtr& msg )
@@ -31,14 +40,20 @@ void nodeLoggerCallback( const rostune::NodeLogline::ConstPtr& msg )
         msg->all_memory/1024/2014, msg->resident_memory/1024/1024 );
 }
 
-void topicLoggerCallback( const rostune::TopicLogline::ConstPtr& msg )
+void topicLoggerCallback( const rostune::MultipleTopicStats::ConstPtr& msg )
 {
-
-  ROS_INFO( "Recv'ed: [%s]",
-	    msg->topic_name.c_str() );
+  int n = msg->topics.size();
+  ROS_INFO( "Recv'ed stats about %d topics: ", n );
+  for( int i=0; i<n; ++i ) {
+    rostune::SingleTopicStats msg_inner = msg->topics[i];
+    ROS_INFO( "%d, [%s]: #msg: %d, b/sec: %f, avg #msg/sec %f, avg b/msg: %f, total bytes: %ld", 
+	      i, msg_inner->name.c_str(),
+	      msg_inner->num_of_messages, msg_inner->bytes_per_second,
+	      msg_inner->avg_msgs_per_sec, msg_inner->avg_bytes_per_msg,
+	      msg_inner->total_bytes );
+  }
   
 }
-
 
 
 int main( int argc, char **argv )

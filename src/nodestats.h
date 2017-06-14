@@ -1,7 +1,14 @@
 /*
+ * This file is part of rostune
+ * https://github.com/roboskel/rostune
+ *
  * BSD 3-Clause License
  * Copyright (c) 2017, NCSR "Demokritos"
  * All rights reserved.
+ *
+ * Authors:
+ * Georgios Stavrinos, https://github.com/gstavrinos
+ * Stasinos Konstantopoulos, https://github.com/stasinos
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the conditions at the
@@ -21,6 +28,30 @@
 #include "ros/xmlrpc_manager.h"
 
 namespace nodestats {
+
+  class NodeStats
+  {
+    public:
+
+    std::string name;
+    uint64_t  prevcputimes;
+    uint64_t prevwalltimes;
+    
+    NodeStats();
+    NodeStats( const std::string );
+    ~NodeStats() { }
+
+    bool operator==(const NodeStats&) const;
+    bool operator==(const std::string&) const;
+    
+    void copy( const NodeStats& that )
+    {
+      name = that.name;
+      prevcputimes = that.prevcputimes;
+      prevwalltimes = that.prevwalltimes;
+    }
+
+  };
 
   void cpuload( int, uint64_t&, uint64_t&, uint64_t& );
 

@@ -1,236 +1,368 @@
 /*
+ * This file is part of rostune
+ * https://github.com/roboskel/rostune
+ *
  * BSD 3-Clause License
  * Copyright (c) 2017, NCSR "Demokritos"
  * All rights reserved.
+ *
+ * Authors:
+ * Georgios Stavrinos, https://github.com/gstavrinos
+ * Stasinos Konstantopoulos, https://github.com/stasinos
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the conditions at the
  * bottom of this file are met.
  */
 
+#ifndef __USE_POSIX
+#define __USE_POSIX
+#endif
 
-#include "ros/ros.h"
-#include "ros/topic_manager.h"
-#include "rostune/NodeLogline.h"
-#include "rostune/TopicLogline.h"
-
+#include <forward_list>
 #include <algorithm>
+#include <cstdlib>
 #include <sstream>
+#include <thread>
+#include <limits>
+
+#include "ros/topic_manager.h"
+#include "ros/ros.h"
+
+#include "rostune/MultipleTopicStats.h"
+#include "rostune/MultipleNodeStats.h"
+#include "rostune/SingleTopicStats.h"
+#include "rostune/SingleNodeStats.h"
 #include "nodestats.h"
 #include "topicstats.h"
 
-#include "rostune/SingleTopicStats.h"
-#include "rostune/MultipleTopicStats.h"
 
-#include <thread>
-#include <forward_list>
-
-#define MAX_NODES  1024
-#define MAX_TOPICS 1024
-
-
-std::string  nodeNames[MAX_NODES];
-uint64_t  prevcputimes[MAX_NODES];
-uint64_t prevwalltimes[MAX_NODES];
-int num_nodes = 0;
 bool first_time = true;
+std::string my_hostname;
 
+std::forward_list<nodestats::NodeStats> monitored_nodes;
 std::forward_list<topicstats::TopicStats> monitored_topics;
 std::vector<std::string> excluded_nodes;
 std::vector<std::string> excluded_topics;
-
 
 void spinToWin(){
   ros::spin();
 }
 
 
+unsigned getNumberOfSubscribers(std::string topic_name){
+  unsigned nos = 0;
+  // The snippet below returns the topics are are being subscribed, along with their subscribers.
+  XmlRpc::XmlRpcValue args, result, payload;
+  args[0] = "rostune";
+  if( ros::master::execute( "getSystemState", args, result, payload, true ) ) {
+    XmlRpc::XmlRpcValue & subscribers = payload[1];
+    for(int i=0; i<subscribers.size(); i++) {
+      XmlRpc::XmlRpcValue & topic = subscribers[i];
+      if(topic_name.compare(topic[0]) == 0){
+        nos = topic[1].size();
+        break;
+      }
+    }
+  }
+  return nos;
+}
 
-void mknodemsg( rostune::NodeLogline& msg, const std::string name, const int i )
-{
-  uint64_t cputime, all_mem, resident_mem;
+std::vector<std::string> getTopicPublishers(std::string topic_name){
+  std::vector<std::string> ret;
+  // The snippet below returns all the published topics along with their publishers.
+  XmlRpc::XmlRpcValue args, result, payload;
+  args[0] = "rostune";
+  if( ros::master::execute( "getSystemState", args, result, payload, true ) ) {
+    XmlRpc::XmlRpcValue & publishers = payload[0];
+    for(unsigned i=0; i<publishers.size(); i++) {
+      XmlRpc::XmlRpcValue & topic = publishers[i];
+      if(topic_name.compare(topic[0]) == 0){
+        for(unsigned j=0;j<topic[1].size();j++){
+          ret.push_back(topic[1][j]);
+        }
+      }
+    }
+  }
+  return ret;
+}
 
-  msg.node_name = name;
-  int pid = nodestats::getPid( name );
-  nodestats::cpuload( pid, cputime, all_mem, resident_mem );
-  msg.header.stamp = ros::Time::now();
-  msg.cputime = cputime;
-  msg.all_memory = all_mem;
-  msg.resident_memory = resident_mem;
-  msg.diffcputime = cputime - prevcputimes[i];
-  uint64_t wtime = msg.header.stamp.sec + msg.header.stamp.nsec / 1000;
-  msg.diffwalltime = wtime - prevwalltimes[i];
-  prevcputimes[i] = cputime;
-  prevwalltimes[i] = wtime;
+std::string getNodeHostname(std::string node_name){
+  XmlRpc::XmlRpcValue args, result, payload;
+  args[0] = "rostune";
+  args[1] = node_name;
+  if( ros::master::execute( "lookupNode", args, result, payload, true ) ) {
+    return result[2];
+  }
+  return "";
+}
+
+bool myMachinePublishes(std::string topic_name){
+  std::vector<std::string> publishers = getTopicPublishers(topic_name);
+  for(unsigned i=0;i<publishers.size();i++){
+    std::string host = getNodeHostname(publishers[i]);
+    host = host.substr(host.find("://")+3);
+    host = host.substr(0, host.find(":"));
+    if (host.compare(my_hostname) == 0){
+      return true;
+    }
+  }
+  return false;
+}
+
+std::string prettyPrinter( ros::V_string list ) {
+  std::stringstream retv;
+  for( auto it = list.begin(); it != list.end(); ++it ) { retv << *it << " "; }
+  return retv.str();
+}
+
+std::string prettyPrinter( std::forward_list<nodestats::NodeStats> list ) {
+  std::stringstream retv;
+  for( auto it = list.begin(); it != list.end(); ++it ) { retv << it->name << " "; }
+  return retv.str();
+}
+
+std::string prettyPrinter( std::forward_list<topicstats::TopicStats> list ) {
+  std::stringstream retv;
+  for( auto it = list.begin(); it != list.end(); ++it ) { retv << it->topic_name << " "; }
+  return retv.str();
 }
 
 
-void mktopicmsg( rostune::TopicLogline& msg, const std::string name, const int i )
+void mknodemsg( rostune::SingleNodeStats& msg, const std::string name, nodestats::NodeStats& nodeStats )
 {
-  msg.topic_name = name;
-  ROS_INFO( "XXX: %s", name.c_str() );
+  uint64_t cputime, all_mem, resident_mem;
+
+  msg.name = name;
+  int pid = nodestats::getPid( name );
+  nodestats::cpuload( pid, cputime, all_mem, resident_mem );
+  msg.cputime = cputime;
+  msg.all_memory = all_mem / 1024;
+  msg.resident_memory = resident_mem / 1024;
+  msg.diffcputime = cputime - nodeStats.prevcputimes;
+  ros::Time t = ros::Time::now();
+  uint64_t wtime = t.sec * 1000 + t.nsec / 1000000;
+  msg.diffwalltime = wtime - nodeStats.prevwalltimes;
+  nodeStats.prevcputimes = cputime;
+  nodeStats.prevwalltimes = wtime;
 }
 
 
 int main( int argc, char **argv )
 {
-  ros::init( argc, argv, "rostune" );
-  ros::NodeHandle n;
-  ros::Publisher nodestats_pub = n.advertise<rostune::NodeLogline>( "rostune/node_stats", 1000 );
-  ros::Publisher topicstats_pub = n.advertise<rostune::MultipleTopicStats>("rostune/topic_stats", 1);
+  // TODO for version 2:
+  // Check if rostune is already running on this machine!
+  std::string my_name = "rostune";
+  ros::init( argc, argv, my_name, ros::init_options::InitOption::AnonymousName );
+  my_name = "/" + my_name;
+  ros::NodeHandle n("~");
+  ros::Publisher nodestats_pub = n.advertise<rostune::MultipleNodeStats>( "/rostune/node_stats", 1 );
+  ros::Publisher topicstats_pub = n.advertise<rostune::MultipleTopicStats>("/rostune/topic_stats", 1);
   ros::Rate loop_rate( 10 );
   static const ros::TopicManagerPtr& tp = ros::TopicManager::instance();
 
-  n.getParam("rostune/excluded_nodes", excluded_nodes);
-  n.getParam("rostune/excluded_topics", excluded_topics);
+  n.getParam("excluded_nodes", excluded_nodes);
+  n.getParam("excluded_topics", excluded_topics);
+
+  char hostname[HOST_NAME_MAX];
+  gethostname(hostname, HOST_NAME_MAX);
+  if (hostname != NULL){
+    my_hostname = hostname;
+  }
 
   // Excluded nodes by default
   if(excluded_nodes.size() == 0){
     excluded_topics.push_back("/rosout");
-    excluded_topics.push_back("/rostune");
   }
 
   // Excluded topics by default
   if(excluded_topics.size() == 0){
     excluded_topics.push_back("/rosout");
     excluded_topics.push_back("/rosout_agg");
-    excluded_topics.push_back("/rostune/node_stats");
-    excluded_topics.push_back("/rostune/topic_stats");
   }
-
+  excluded_topics.push_back("/rostune/topic_stats");
+  excluded_topics.push_back("/rostune/node_stats");
 
   while( ros::ok() )
   {
-    /* Get CPU and memory usage stats about all nodes */
-      
+    // Get CPU and memory usage stats about all nodes
     ros::V_string nodelist;
     bool succ = ros::master::getNodes( nodelist );
-    if( !succ ) { loop_rate.sleep(); break; }
-    
-    for( int i=0; i<num_nodes; ++i ) {
-      // Look for the node in the list of current nodes
-      std::vector<std::string>::iterator it = std::find( nodelist.begin(), nodelist.end(), nodeNames[i] );
-      if( it != nodelist.end() ) {
-	// node i is still here, fetch cpudata and build a message
-	rostune::NodeLogline msg;
-	mknodemsg( msg, *it, i );
-	nodestats_pub.publish( msg );
-	
-	// remove from vector, no need to look here again as nodenames appear once
-	*it = nodelist.back();
-	nodelist.pop_back();
+
+    if( succ ) {
+
+      rostune::MultipleNodeStats mns;
+      mns.hostname = my_hostname;
+
+      for( auto nodeIt = monitored_nodes.begin(); nodeIt != monitored_nodes.end(); ) {
+
+        // Look for the node in the list of current nodes
+        std::vector<std::string>::iterator it = std::find( nodelist.begin(), nodelist.end(), nodeIt->name );
+
+        if( it != nodelist.end() ) {
+
+          // node nodeIt still here, fetch cpudata and build a message
+          rostune::SingleNodeStats sns;
+          mknodemsg( sns, *it, *nodeIt );
+          mns.nodes.push_back(sns);
+
+          // remove from vector, no need to look here again as nodenames appear once
+          *it = nodelist.back();
+          nodelist.pop_back();
+
+          // move on to the next monitored_nodes item
+          ++nodeIt;
+        }
+        else {
+          // node nodeIt has disappeared
+          if( *nodeIt == monitored_nodes.front() ) {
+            // iterIt is the front element. Just pop it, but first advance the iterator.
+            ROS_DEBUG( "Purging from the front of the list node %s", nodeIt->name.c_str() );
+            ++nodeIt;
+            monitored_nodes.pop_front();
+            ROS_DEBUG( "List after purge: %s",
+                 prettyPrinter(monitored_nodes).c_str() );
+          }
+          else {
+            // overwrite with the front node, and remove front
+            ROS_DEBUG( "Purging from the middle of the list node %s", nodeIt->name.c_str() );
+            nodeIt->copy( monitored_nodes.front() );
+            monitored_nodes.pop_front();
+            // work on this node, without for-looping
+            // (going through for-loop would skip this element)
+            ROS_DEBUG( "List after purge: %s",
+                 prettyPrinter(monitored_nodes).c_str() );
+          }
+        }
+      } // end for all monitored_nodes
+
+      ROS_DEBUG( "List of current nodes after comparison with my list: %s",
+        prettyPrinter(monitored_nodes).c_str() );
+
+      // now add what's left of the nodelist to my monitored_nodes
+      for( ros::V_string::const_iterator q = nodelist.begin(); q != nodelist.end(); ++q ) {
+        // check if this node should be excluded
+        bool exclude_this = false;
+        for(unsigned i=0;i<excluded_nodes.size();i++){
+          // Apart from the excluded_nodes, 
+          // also exclude all the nodes that their name starts with /rostune
+          // TODO add this on the final README, because it might cause conflicts with future packages!
+          if(q->compare(excluded_nodes[i]) == 0 || q->compare(0, my_name.size(), my_name) == 0){
+            exclude_this = true;
+            break;
+          }
+        }
+        if(!exclude_this){
+          monitored_nodes.emplace_front( *q );
+          rostune::SingleNodeStats sns;
+          mknodemsg( sns, *q, monitored_nodes.front() );
+          mns.nodes.push_back(sns);
+        }
       }
-      else {
-      // node i is gone
-      if( i < num_nodes ) {
-        // overwrite with the last node, unless this is the last node
-        nodeNames[i] = nodeNames[num_nodes];
-        prevcputimes[i] = prevcputimes[num_nodes];
-        prevwalltimes[i] = prevwalltimes[num_nodes];
-        --i; // make the loop go over the new i
-      }
-      // either way, the array is now shorter
-      --num_nodes;
-      }
+
+      mns.header.stamp = ros::Time::now();
+      mns.nodes = mns.nodes;
+      nodestats_pub.publish(mns);
     }
 
-    // now add what's left of the nodelist to my nodes
-    for( ros::V_string::const_iterator q = nodelist.begin(); q != nodelist.end(); ++q ) {
-      rostune::NodeLogline msg;
-      if( num_nodes < MAX_NODES ) {
-	++num_nodes;
-	nodeNames[num_nodes] = *q;
-	prevcputimes[num_nodes] = 0;
-	prevwalltimes[num_nodes] = 0;
-	mknodemsg( msg, *q, num_nodes );
-	nodestats_pub.publish( msg );
-      }
-    }
-
-
-    /* Get bandwidth and frequency stats about all topics */
-
+    // Get bandwidth and frequency stats about all topics
     ros::master::V_TopicInfo topiclist;
     succ = ros::master::getTopics( topiclist );
 
     if (succ) {
 
-      for( auto it = monitored_topics.begin(); it != monitored_topics.end(); it++ ) {	
-	// Look for the topic in the list of topics *with at least two subscribers*.
-	// Topics with one subscriber (myself) are treated as non-existing, to avoid
-	// forcing the circulation of messages that wouldn't otherwise be circulated
-	// as there are no subscribers.
+      for( auto it = monitored_topics.begin(); it != monitored_topics.end(); it++ ) {
 
+        // NOTE: The for loop below looks for *it inside topiclist
+        bool found = false;
+        ros::master::V_TopicInfo::iterator f_index = topiclist.begin();
+        ros::master::V_TopicInfo::iterator it2;
+        for( it2 = topiclist.begin(); it2 != topiclist.end(); ++it2 ){
+          if(*it == it2->name){
+            found = true;
+            f_index = it2;
+            break;
+          }
+        }
 
-	// NOTE: The for loop below looks for *it inside topiclist
-	ros::master::V_TopicInfo::iterator it2;
-	for( it2 = topiclist.begin();
-	     (it2 != topiclist.end()) && !(*it == it2->name); ++it2 );
+        if( found ) {
+          ROS_DEBUG( "Found %s in list of topics", it->topic_name.c_str() );
+          ROS_DEBUG( "Branch 1: %s has %d subscribers", it->topic_name.c_str(), getNumberOfSubscribers(it->topic_name) );
+        }
 
-	if( it2 != topiclist.end() ) {
-	  ROS_DEBUG( "Found %s in list of topics", it->topic_name.c_str() );
-	  ROS_DEBUG( "Branch 1: %s has %d subscribers", it->topic_name.c_str(), tp->getNumSubscribers(it->topic_name) );
-	}
-	
-	if( it2 != topiclist.end() && tp->getNumSubscribers(it->topic_name) > 1 ) {
-	  // topic i is still here and has at least two subscribers (one is myself)
-	  // remove from vector, no need to look here again as topicnames appear once
-	  *it2 = topiclist.back();
-	  topiclist.pop_back();
-	}
-	// If we need to make a distinction between topic not exists and no subs:
-	//else if( it2 == topiclist.end() ) {
-	//  // DO something about topic disappeared
-	//}
-	else {
-	  // the topic does not exist any more or the
-	  // topic exists, but has no subscribers except myself
-	  it->subscriber.shutdown();
-	}
+        if( found && getNumberOfSubscribers(it->topic_name) > 1 ) {
+          // topic i is still here and has at least one subscriber (myself is excluded)
+          // remove from vector, no need to look here again as topicnames appear once
+          topiclist.erase(f_index);
+          //*it2 = topiclist.back();
+          //topiclist.pop_back();
+        }
+        // If we need to make a distinction between topic not exists and no subs:
+        //else if( it2 == topiclist.end() ) {
+        //  // DO something about topic disappeared
+        //}
+        else if(it->subscribed){
+          // the topic does not exist any more or the
+          it->subscriber.shutdown();
+          it->subscribed = false;
+          ROS_INFO( "Unsubscribed from %s", it->topic_name.c_str() );
+        }
       }
-
-      std::cout << "XXXX ";
+      // now add what's left of the topiclist to my topics
       for( ros::master::V_TopicInfo::iterator q = topiclist.begin(); q != topiclist.end(); ++q ) {
-	std::cout << q->name << "(" << tp->getNumSubscribers(q->name) << ") ";
-      }
-	// now add what's left of the topiclist to my topics
-      for( ros::master::V_TopicInfo::iterator q = topiclist.begin(); q != topiclist.end(); ++q ) {
-	ROS_DEBUG( "Branch 2: %s has %d subscribers", q->name.c_str(), tp->getNumSubscribers(q->name) );
-	
-	// check that this topic should not be excluded
-	bool exclude_this = false;
-	for(unsigned i=0;i<excluded_topics.size();i++){
-	  if(q->name.compare(excluded_topics[i]) == 0){
-	    exclude_this = true;
-	    break;
-	  }
-	}
-	
-	if( !exclude_this ) {
-	  monitored_topics.emplace_front(q->name);
-	  monitored_topics.front().subscriber = n.subscribe(q->name, 1, &topicstats::TopicStats::callback, &monitored_topics.front());
-	  ROS_INFO( "Subscribed to %s", q->name.c_str() );
-	}
-      }
-    }
-	
-    rostune::MultipleTopicStats mts;
-    std::vector<rostune::SingleTopicStats> stats_data;
+        ROS_DEBUG( "Branch 2: %s has %d subscribers", q->name.c_str(), getNumberOfSubscribers(q->name) );
 
-    for (auto it = monitored_topics.begin(); it != monitored_topics.end(); it++) {
-      rostune::SingleTopicStats sts;
-      sts.name = it->topic_name;
-      sts.num_of_messages = it->num_of_messages;
-      sts.bytes_per_second = it->bytes_per_second;
-      sts.avg_bytes_per_msg = it->avg_bytes_per_msg;
-      sts.avg_msgs_per_sec = it->avg_msgs_per_sec;
-      sts.total_bytes = it->total_bytes;
-      stats_data.push_back(sts);
-    }
+        // check if this topic should be excluded
+        bool exclude_this = false;
+        for(unsigned i=0;i<excluded_topics.size();i++){
+          if(q->name.compare(excluded_topics[i]) == 0){
+            exclude_this = true;
+            break;
+          }
+        }
 
-    mts.header.stamp = ros::Time::now();
-    mts.topics = stats_data;
-    topicstats_pub.publish(mts);
+        if( !exclude_this ) {
+          // TODO think of a strategy when a topic is being published from my machine and another one!
+          if(myMachinePublishes(q->name) && getNumberOfSubscribers(q->name) >= 1){
+            auto it = monitored_topics.begin();
+            for(; it != monitored_topics.end(); it++ ) {
+              if(it->topic_name == q->name){
+                break;
+              }
+            }
+            if(it == monitored_topics.end()){
+              monitored_topics.emplace_front(q->name);
+              monitored_topics.front().subscriber = n.subscribe(q->name, 1, &topicstats::TopicStats::callback, &monitored_topics.front());
+              monitored_topics.front().subscribed = true;
+            }
+            else{
+              it->subscriber = n.subscribe(q->name, 1, &topicstats::TopicStats::callback, &*it);
+              it->subscribed = true;
+            }
+            ROS_INFO( "Subscribed to %s", q->name.c_str() );
+          }
+        }
+      }
+
+      rostune::MultipleTopicStats mts;
+      mts.hostname = my_hostname;
+
+      for (auto it = monitored_topics.begin(); it != monitored_topics.end(); it++) {
+        rostune::SingleTopicStats sts;
+        sts.name = it->topic_name;
+        sts.num_of_messages = it->num_of_messages;
+        sts.bytes_per_second = it->bytes_per_second;
+        sts.avg_bytes_per_msg = it->avg_bytes_per_msg;
+        sts.avg_msgs_per_sec = it->avg_msgs_per_sec;
+        sts.total_bytes = it->total_bytes;
+        mts.topics.push_back(sts);
+      }
+
+      mts.header.stamp = ros::Time::now();
+      mts.topics = mts.topics;
+      topicstats_pub.publish(mts);
+
+    }
 
     if(first_time){
       std::thread spinner_thread(spinToWin);

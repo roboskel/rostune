@@ -1,3 +1,3 @@
 Header header
 string hostname
-SingleTopicStats[] topics
+SingleNodeStats[] nodes

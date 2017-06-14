@@ -1,5 +1,4 @@
-Header header
-string node_name
+string name
 uint64 cputime
 uint64 diffcputime
 uint64 diffwalltime

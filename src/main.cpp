@@ -262,6 +262,15 @@ int main( int argc, char **argv )
 
       mns.header.stamp = ros::Time::now();
       mns.nodes = mns.nodes;
+
+      for (auto it = mns.nodes.begin(); it != mns.nodes.end(); it++){
+        mns.total_cputime += it->cputime;
+        mns.total_diffcputime += it->diffcputime;
+        mns.total_diffwalltime += it->diffwalltime;
+        mns.total_all_memory += it->all_memory;
+        mns.total_resident_memory += it->resident_memory;
+      }
+
       nodestats_pub.publish(mns);
     }
 
@@ -360,6 +369,15 @@ int main( int argc, char **argv )
 
       mts.header.stamp = ros::Time::now();
       mts.topics = mts.topics;
+
+      for (auto it = mts.topics.begin(); it != mts.topics.end(); it++){
+        mts.total_num_of_messages += it->num_of_messages;
+        mts.total_bytes_per_second += it->bytes_per_second;
+        mts.total_avg_msgs_per_sec += it->avg_msgs_per_sec;
+        mts.total_bytes_per_second += it->avg_bytes_per_msg;
+        mts.total_bytes += it->total_bytes;
+      }
+
       topicstats_pub.publish(mts);
 
     }

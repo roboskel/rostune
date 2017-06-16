@@ -1,3 +1,8 @@
 Header header
 string hostname
+uint64 total_cputime
+uint64 total_diffcputime
+uint64 total_diffwalltime
+uint64 total_all_memory
+uint64 total_resident_memory
 SingleNodeStats[] nodes

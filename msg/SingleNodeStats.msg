@@ -1,6 +1,9 @@
 string name
 uint64 cputime
+float64 cputime_percentage
 uint64 diffcputime
 uint64 diffwalltime
 uint64 all_memory
+float64 all_memory_percentage
 uint64 resident_memory
+float64 resident_memory_percentage

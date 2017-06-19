@@ -23,6 +23,7 @@
 
 #include <sstream>
 
+#include <sys/sysinfo.h>
 
 #include "ros/master.h"
 #include "ros/xmlrpc_manager.h"
@@ -53,7 +54,7 @@ namespace nodestats {
 
   };
 
-  void cpuload( int, uint64_t&, uint64_t&, uint64_t& );
+  void cpuload( int, uint64_t&, uint64_t&, double&, uint64_t&, double& );
 
   int getPid( std::string nodeName );
 
@@ -63,6 +64,8 @@ namespace nodestats {
            bool wait_for_master, ros::WallDuration g_retry_timeout );
 
   void parseUrl( std::string url, std::string& host, uint32_t& port );
+
+  unsigned long getTotalRAM();
 
 }
 

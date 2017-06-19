@@ -19,7 +19,6 @@
 
 namespace nodestats {
 
-
 NodeStats::NodeStats()
 {
   prevcputimes = 0;
@@ -77,9 +76,14 @@ int getPid( std::string nodeName )
   }
 }
 
+unsigned long getTotalRAM(){
+  struct sysinfo info;
+  sysinfo(&info);
+  return info.totalram;
+}
 
 void cpuload( int pid,
-      uint64_t &cputime, uint64_t &all_mem, uint64_t &resident_mem )
+      uint64_t &cputime, uint64_t &all_mem, double &all_mem_per, uint64_t &resident_mem, double &res_mem_per )
 {
   FILE *fp;
   std::stringstream pathname;
@@ -91,11 +95,13 @@ void cpuload( int pid,
   unsigned long utime, stime, cutime, cstime, vsize;
   long num_threads, rss;
   unsigned long long starttime;
+
+  unsigned long totalram = getTotalRAM();
   
   if( fp != NULL ) {
     char line[1024];
     fgets( line, sizeof line, fp );
-    ROS_DEBUG( "proc line, %d bytes: %s", strlen(line), line );
+    ROS_DEBUG( "proc line, %ld bytes: %s", strlen(line), line );
     sscanf( line,  
     "%*d %*s %*c %*d %*d %*d %*d %*d %*u %*lu %*lu %*lu %*lu %lu %lu %lu %lu %*ld %*ld %ld %*ld %llu %lu %ld %*lu %*lu %*s",
     &utime, &stime, &cutime, &cstime, &num_threads, &starttime, &vsize, &rss );
@@ -103,8 +109,10 @@ void cpuload( int pid,
 
     ROS_DEBUG( "Extracted: utime %lu, stime %lu, cutime %lu, cstime %lu, num_threads: %ld starttime: %llu vsize: %lu rss: %ld", utime, stime, cutime, cstime, num_threads, starttime, vsize, rss );
     cputime = 1000*(cutime + cstime + utime + stime)/clockrate;
-    all_mem = vsize;
-    resident_mem = rss * sysconf( _SC_PAGE_SIZE );
+    all_mem = vsize / 1024;
+    all_mem_per = ((double)all_mem / (double)totalram) * 100;
+    resident_mem = rss * sysconf( _SC_PAGE_SIZE ) / 1024;
+    res_mem_per = ((double)resident_mem / (double)totalram) * 100;
   }
   else {
     cputime = 0;

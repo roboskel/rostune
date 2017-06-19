@@ -1,8 +1,11 @@
 Header header
 string hostname
 uint64 total_cputime
+float32 total_cputime_percentage
 uint64 total_diffcputime
 uint64 total_diffwalltime
 uint64 total_all_memory
+float64 total_all_memory_percentage
 uint64 total_resident_memory
+float64 total_resident_memory_percentage
 SingleNodeStats[] nodes

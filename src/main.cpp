@@ -110,6 +110,16 @@ bool myMachinePublishes(std::string topic_name){
   return false;
 }
 
+bool myMachineRuns(std::string node_name){
+  std::string host = getNodeHostname(node_name);
+  host = host.substr(host.find("://")+3);
+  host = host.substr(0, host.find(":"));
+  if (host.compare(my_hostname) == 0){
+    return true;
+  }
+  return false;
+}
+
 std::string prettyPrinter( ros::V_string list ) {
   std::stringstream retv;
   for( auto it = list.begin(); it != list.end(); ++it ) { retv << *it << " "; }
@@ -132,17 +142,21 @@ std::string prettyPrinter( std::forward_list<topicstats::TopicStats> list ) {
 void mknodemsg( rostune::SingleNodeStats& msg, const std::string name, nodestats::NodeStats& nodeStats )
 {
   uint64_t cputime, all_mem, resident_mem;
+  double all_mem_percentage, resident_mem_percentage;
 
   msg.name = name;
   int pid = nodestats::getPid( name );
-  nodestats::cpuload( pid, cputime, all_mem, resident_mem );
+  nodestats::cpuload( pid, cputime, all_mem, all_mem_percentage, resident_mem, resident_mem_percentage );
   msg.cputime = cputime;
-  msg.all_memory = all_mem / 1024;
-  msg.resident_memory = resident_mem / 1024;
+  msg.all_memory = all_mem;
+  msg.all_memory_percentage = all_mem_percentage;
+  msg.resident_memory = resident_mem;
+  msg.resident_memory_percentage = resident_mem_percentage;
   msg.diffcputime = cputime - nodeStats.prevcputimes;
   ros::Time t = ros::Time::now();
   uint64_t wtime = t.sec * 1000 + t.nsec / 1000000;
   msg.diffwalltime = wtime - nodeStats.prevwalltimes;
+  msg.cputime_percentage = (double)msg.diffcputime / (double) msg.diffwalltime;
   nodeStats.prevcputimes = cputime;
   nodeStats.prevwalltimes = wtime;
 }
@@ -252,7 +266,7 @@ int main( int argc, char **argv )
             break;
           }
         }
-        if(!exclude_this){
+        if(!exclude_this && myMachineRuns(*q)){
           monitored_nodes.emplace_front( *q );
           rostune::SingleNodeStats sns;
           mknodemsg( sns, *q, monitored_nodes.front() );
@@ -265,10 +279,13 @@ int main( int argc, char **argv )
 
       for (auto it = mns.nodes.begin(); it != mns.nodes.end(); it++){
         mns.total_cputime += it->cputime;
+        mns.total_cputime_percentage += it->cputime_percentage;
         mns.total_diffcputime += it->diffcputime;
         mns.total_diffwalltime += it->diffwalltime;
         mns.total_all_memory += it->all_memory;
+        mns.total_all_memory_percentage += it->all_memory_percentage;
         mns.total_resident_memory += it->resident_memory;
+        mns.total_resident_memory_percentage += it->resident_memory_percentage;
       }
 
       nodestats_pub.publish(mns);

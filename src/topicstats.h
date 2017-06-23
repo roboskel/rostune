@@ -36,6 +36,7 @@ namespace topicstats {
       int num_of_messages;
       double total_bytes;
       bool subscribed;
+      double start_time;
 
       TopicStats(){}
       ~TopicStats(){}
@@ -43,9 +44,6 @@ namespace topicstats {
       void callback(const topic_tools::ShapeShifter::ConstPtr&);
       bool operator==(const TopicStats&) const;
       bool operator==(const std::string&) const;
-
-    protected:
-      double start_time;
 
   };
 

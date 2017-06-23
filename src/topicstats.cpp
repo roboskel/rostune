@@ -47,10 +47,10 @@ namespace topicstats {
     num_of_messages++;
     total_bytes += msg->size();
     avg_bytes_per_msg = total_bytes / num_of_messages;
-    if(curr_time-start_time > 0){
+    /*if(curr_time-start_time > 0){
       bytes_per_second = total_bytes / (curr_time-start_time);
       avg_msgs_per_sec = num_of_messages / (curr_time-start_time);
-    }
+    }*/
   }
 
 }

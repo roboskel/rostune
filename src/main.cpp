@@ -372,8 +372,14 @@ int main( int argc, char **argv )
 
       rostune::MultipleTopicStats mts;
       mts.hostname = my_hostname;
+      mts.header.stamp = ros::Time::now();
+      double curr_time = mts.header.stamp.toSec();
 
       for (auto it = monitored_topics.begin(); it != monitored_topics.end(); it++) {
+        if(curr_time-it->start_time > 0){
+          it->bytes_per_second = it->total_bytes / (curr_time-it->start_time);
+          it->avg_msgs_per_sec = it->num_of_messages / (curr_time-it->start_time);
+        }
         rostune::SingleTopicStats sts;
         sts.name = it->topic_name;
         sts.num_of_messages = it->num_of_messages;
@@ -384,7 +390,6 @@ int main( int argc, char **argv )
         mts.topics.push_back(sts);
       }
 
-      mts.header.stamp = ros::Time::now();
       mts.topics = mts.topics;
 
       for (auto it = mts.topics.begin(); it != mts.topics.end(); it++){

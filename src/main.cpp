@@ -1,355 +1,454 @@
 /*
- * Copyright (C) 2017, NCSR "Demokritos"
+ * This file is part of rostune
+ * https://github.com/roboskel/rostune
  *
- * BSD 3
+ * BSD 3-Clause License
+ * Copyright (c) 2017, NCSR "Demokritos"
+ * All rights reserved.
+ *
+ * Authors:
+ * Georgios Stavrinos, https://github.com/gstavrinos
+ * Stasinos Konstantopoulos, https://github.com/stasinos
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the conditions at the
+ * bottom of this file are met.
  */
-//
-// %Tag(FULLTEXT)%
-// %Tag(ROS_HEADER)%
-#include "ros/ros.h"
-// %EndTag(ROS_HEADER)%
-// %Tag(MSG_HEADER)%
-#include "std_msgs/String.h"
-// %EndTag(MSG_HEADER)%
 
+#ifndef __USE_POSIX
+#define __USE_POSIX
+#endif
+
+#include <forward_list>
+#include <algorithm>
+#include <cstdlib>
 #include <sstream>
+#include <thread>
+#include <limits>
+
+#include "ros/topic_manager.h"
+#include "ros/ros.h"
+
+#include "rostune/MultipleTopicStats.h"
+#include "rostune/MultipleNodeStats.h"
+#include "rostune/SingleTopicStats.h"
+#include "rostune/SingleNodeStats.h"
+#include "nodestats.h"
+#include "topicstats.h"
 
 
-int main(int argc, char **argv)
+bool first_time = true;
+std::string my_hostname;
+
+std::forward_list<nodestats::NodeStats> monitored_nodes;
+std::forward_list<topicstats::TopicStats> monitored_topics;
+std::vector<std::string> excluded_nodes;
+std::vector<std::string> excluded_topics;
+
+void spinToWin(){
+  ros::spin();
+}
+
+
+unsigned getNumberOfSubscribers(std::string topic_name){
+  unsigned nos = 0;
+  // The snippet below returns the topics are are being subscribed, along with their subscribers.
+  XmlRpc::XmlRpcValue args, result, payload;
+  args[0] = "rostune";
+  if( ros::master::execute( "getSystemState", args, result, payload, true ) ) {
+    XmlRpc::XmlRpcValue & subscribers = payload[1];
+    for(int i=0; i<subscribers.size(); i++) {
+      XmlRpc::XmlRpcValue & topic = subscribers[i];
+      if(topic_name.compare(topic[0]) == 0){
+        nos = topic[1].size();
+        break;
+      }
+    }
+  }
+  return nos;
+}
+
+std::vector<std::string> getTopicPublishers(std::string topic_name){
+  std::vector<std::string> ret;
+  // The snippet below returns all the published topics along with their publishers.
+  XmlRpc::XmlRpcValue args, result, payload;
+  args[0] = "rostune";
+  if( ros::master::execute( "getSystemState", args, result, payload, true ) ) {
+    XmlRpc::XmlRpcValue & publishers = payload[0];
+    for(unsigned i=0; i<publishers.size(); i++) {
+      XmlRpc::XmlRpcValue & topic = publishers[i];
+      if(topic_name.compare(topic[0]) == 0){
+        for(unsigned j=0;j<topic[1].size();j++){
+          ret.push_back(topic[1][j]);
+        }
+      }
+    }
+  }
+  return ret;
+}
+
+std::string getNodeHostname(std::string node_name){
+  XmlRpc::XmlRpcValue args, result, payload;
+  args[0] = "rostune";
+  args[1] = node_name;
+  if( ros::master::execute( "lookupNode", args, result, payload, true ) ) {
+    return result[2];
+  }
+  return "";
+}
+
+bool myMachinePublishes(std::string topic_name){
+  std::vector<std::string> publishers = getTopicPublishers(topic_name);
+  for(unsigned i=0;i<publishers.size();i++){
+    std::string host = getNodeHostname(publishers[i]);
+    host = host.substr(host.find("://")+3);
+    host = host.substr(0, host.find(":"));
+    if (host.compare(my_hostname) == 0){
+      return true;
+    }
+  }
+  return false;
+}
+
+bool myMachineRuns(std::string node_name){
+  std::string host = getNodeHostname(node_name);
+  host = host.substr(host.find("://")+3);
+  host = host.substr(0, host.find(":"));
+  if (host.compare(my_hostname) == 0){
+    return true;
+  }
+  return false;
+}
+
+std::string prettyPrinter( ros::V_string list ) {
+  std::stringstream retv;
+  for( auto it = list.begin(); it != list.end(); ++it ) { retv << *it << " "; }
+  return retv.str();
+}
+
+std::string prettyPrinter( std::forward_list<nodestats::NodeStats> list ) {
+  std::stringstream retv;
+  for( auto it = list.begin(); it != list.end(); ++it ) { retv << it->name << " "; }
+  return retv.str();
+}
+
+std::string prettyPrinter( std::forward_list<topicstats::TopicStats> list ) {
+  std::stringstream retv;
+  for( auto it = list.begin(); it != list.end(); ++it ) { retv << it->topic_name << " "; }
+  return retv.str();
+}
+
+
+void mknodemsg( rostune::SingleNodeStats& msg, const std::string name, nodestats::NodeStats& nodeStats )
 {
+  uint64_t cputime, all_mem, resident_mem;
+  double all_mem_percentage, resident_mem_percentage;
 
-  /**
-   * The ros::init() function needs to see argc and argv so that it can perform
-   * any ROS arguments and name remapping that were provided at the command line.
-   * For programmatic remappings you can use a different version of init() which takes
-   * remappings directly, but for most command-line programs, passing argc and argv is
-   * the easiest way to do it.  The third argument to init() is the name of the node.
-   *
-   * You must call one of the versions of ros::init() before using any other
-   * part of the ROS system.
-   */
-// %Tag(INIT)%
-  ros::init(argc, argv, "talker");
-// %EndTag(INIT)%
+  msg.name = name;
+  int pid = nodestats::getPid( name );
+  nodestats::cpuload( pid, cputime, all_mem, all_mem_percentage, resident_mem, resident_mem_percentage );
+  msg.cputime = cputime;
+  msg.all_memory = all_mem;
+  msg.all_memory_percentage = all_mem_percentage;
+  msg.resident_memory = resident_mem;
+  msg.resident_memory_percentage = resident_mem_percentage;
+  msg.diffcputime = cputime - nodeStats.prevcputimes;
+  ros::Time t = ros::Time::now();
+  uint64_t wtime = t.sec * 1000 + t.nsec / 1000000;
+  msg.diffwalltime = wtime - nodeStats.prevwalltimes;
+  msg.cputime_percentage = (double)msg.diffcputime / (double) msg.diffwalltime;
+  nodeStats.prevcputimes = cputime;
+  nodeStats.prevwalltimes = wtime;
+}
 
-  /**
-   * NodeHandle is the main access point to communications with the ROS system.
-   * The first NodeHandle constructed will fully initialize this node, and the last
-   * NodeHandle destructed will close down the node.
-   */
-// %Tag(NODEHANDLE)%
-  ros::NodeHandle n;
-// %EndTag(NODEHANDLE)%
 
-  /**
-   * The advertise() function is how you tell ROS that you want to
-   * publish on a given topic name. This invokes a call to the ROS
-   * master node, which keeps a registry of who is publishing and who
-   * is subscribing. After this advertise() call is made, the master
-   * node will notify anyone who is trying to subscribe to this topic name,
-   * and they will in turn negotiate a peer-to-peer connection with this
-   * node.  advertise() returns a Publisher object which allows you to
-   * publish messages on that topic through a call to publish().  Once
-   * all copies of the returned Publisher object are destroyed, the topic
-   * will be automatically unadvertised.
-   *
-   * The second parameter to advertise() is the size of the message queue
-   * used for publishing messages.  If messages are published more quickly
-   * than we can send them, the number here specifies how many messages to
-   * buffer up before throwing some away.
-   */
-// %Tag(PUBLISHER)%
-  ros::Publisher cputime_pub = n.advertise<std_msgs::String>( "cputime", 1000 );
-// %EndTag(PUBLISHER)%
+int main( int argc, char **argv )
+{
+  // TODO for version 2:
+  // Check if rostune is already running on this machine!
+  std::string my_name = "rostune";
+  ros::init( argc, argv, my_name, ros::init_options::InitOption::AnonymousName );
+  my_name = "/" + my_name;
+  ros::NodeHandle n("~");
+  ros::Publisher nodestats_pub = n.advertise<rostune::MultipleNodeStats>( "/rostune/node_stats", 1 );
+  ros::Publisher topicstats_pub = n.advertise<rostune::MultipleTopicStats>("/rostune/topic_stats", 1);
+  ros::Rate loop_rate( 10 );
+  static const ros::TopicManagerPtr& tp = ros::TopicManager::instance();
 
-// %Tag(LOOP_RATE)%
-  ros::Rate loop_rate(10);
-// %EndTag(LOOP_RATE)%
+  n.getParam("excluded_nodes", excluded_nodes);
+  n.getParam("excluded_topics", excluded_topics);
 
-  /**
-   * A count of how many messages we have sent. This is used to create
-   * a unique string for each message.
-   */
-// %Tag(ROS_OK)%
-  int count = 0;
+  char hostname[HOST_NAME_MAX];
+  gethostname(hostname, HOST_NAME_MAX);
+  if (hostname != NULL){
+    my_hostname = hostname;
+  }
+
+  // Excluded nodes by default
+  if(excluded_nodes.size() == 0){
+    excluded_topics.push_back("/rosout");
+  }
+
+  // Excluded topics by default
+  if(excluded_topics.size() == 0){
+    excluded_topics.push_back("/rosout");
+    excluded_topics.push_back("/rosout_agg");
+  }
+  excluded_topics.push_back("/rostune/topic_stats");
+  excluded_topics.push_back("/rostune/node_stats");
+
   while( ros::ok() )
   {
-// %EndTag(ROS_OK)%
-    /**
-     * This is a message object. You stuff it with data, and then publish it.
-     */
-// %Tag(FILL_MESSAGE)%
-    std_msgs::String msg;
+    // Get CPU and memory usage stats about all nodes
+    ros::V_string nodelist;
+    bool succ = ros::master::getNodes( nodelist );
 
-    std::stringstream ss;
-    ss << "hello world " << count;
-    msg.data = ss.str();
-// %EndTag(FILL_MESSAGE)%
+    if( succ ) {
 
-// %Tag(ROSCONSOLE)%
-    ROS_INFO("%s", msg.data.c_str());
-// %EndTag(ROSCONSOLE)%
+      rostune::MultipleNodeStats mns;
+      mns.hostname = my_hostname;
 
-    /**
-     * The publish() function is how you send messages. The parameter
-     * is the message object. The type of this object must agree with the type
-     * given as a template parameter to the advertise<>() call, as was done
-     * in the constructor above.
-     */
-// %Tag(PUBLISH)%
-    cputime_pub.publish( msg );
-// %EndTag(PUBLISH)%
+      for( auto nodeIt = monitored_nodes.begin(); nodeIt != monitored_nodes.end(); ) {
 
-// %Tag(SPINONCE)%
-    ros::spinOnce();
-// %EndTag(SPINONCE)%
+        // Look for the node in the list of current nodes
+        std::vector<std::string>::iterator it = std::find( nodelist.begin(), nodelist.end(), nodeIt->name );
 
-// %Tag(RATE_SLEEP)%
+        if( it != nodelist.end() ) {
+
+          // node nodeIt still here, fetch cpudata and build a message
+          rostune::SingleNodeStats sns;
+          mknodemsg( sns, *it, *nodeIt );
+          mns.nodes.push_back(sns);
+
+          // remove from vector, no need to look here again as nodenames appear once
+          *it = nodelist.back();
+          nodelist.pop_back();
+
+          // move on to the next monitored_nodes item
+          ++nodeIt;
+        }
+        else {
+          // node nodeIt has disappeared
+          if( *nodeIt == monitored_nodes.front() ) {
+            // iterIt is the front element. Just pop it, but first advance the iterator.
+            ROS_DEBUG( "Purging from the front of the list node %s", nodeIt->name.c_str() );
+            ++nodeIt;
+            monitored_nodes.pop_front();
+            ROS_DEBUG( "List after purge: %s",
+                 prettyPrinter(monitored_nodes).c_str() );
+          }
+          else {
+            // overwrite with the front node, and remove front
+            ROS_DEBUG( "Purging from the middle of the list node %s", nodeIt->name.c_str() );
+            nodeIt->copy( monitored_nodes.front() );
+            monitored_nodes.pop_front();
+            // work on this node, without for-looping
+            // (going through for-loop would skip this element)
+            ROS_DEBUG( "List after purge: %s",
+                 prettyPrinter(monitored_nodes).c_str() );
+          }
+        }
+      } // end for all monitored_nodes
+
+      ROS_DEBUG( "List of current nodes after comparison with my list: %s",
+        prettyPrinter(monitored_nodes).c_str() );
+
+      // now add what's left of the nodelist to my monitored_nodes
+      for( ros::V_string::const_iterator q = nodelist.begin(); q != nodelist.end(); ++q ) {
+        // check if this node should be excluded
+        bool exclude_this = false;
+        for(unsigned i=0;i<excluded_nodes.size();i++){
+          // Apart from the excluded_nodes, 
+          // also exclude all the nodes that their name starts with /rostune
+          // TODO add this on the final README, because it might cause conflicts with future packages!
+          if(q->compare(excluded_nodes[i]) == 0 || q->compare(0, my_name.size(), my_name) == 0){
+            exclude_this = true;
+            break;
+          }
+        }
+        if(!exclude_this && myMachineRuns(*q)){
+          monitored_nodes.emplace_front( *q );
+          rostune::SingleNodeStats sns;
+          mknodemsg( sns, *q, monitored_nodes.front() );
+          mns.nodes.push_back(sns);
+        }
+      }
+
+      mns.header.stamp = ros::Time::now();
+      mns.nodes = mns.nodes;
+
+      for (auto it = mns.nodes.begin(); it != mns.nodes.end(); it++){
+        mns.total_cputime += it->cputime;
+        mns.total_cputime_percentage += it->cputime_percentage;
+        mns.total_diffcputime += it->diffcputime;
+        mns.total_diffwalltime += it->diffwalltime;
+        mns.total_all_memory += it->all_memory;
+        mns.total_all_memory_percentage += it->all_memory_percentage;
+        mns.total_resident_memory += it->resident_memory;
+        mns.total_resident_memory_percentage += it->resident_memory_percentage;
+      }
+
+      nodestats_pub.publish(mns);
+    }
+
+    // Get bandwidth and frequency stats about all topics
+    ros::master::V_TopicInfo topiclist;
+    succ = ros::master::getTopics( topiclist );
+
+    if (succ) {
+
+      for( auto it = monitored_topics.begin(); it != monitored_topics.end(); it++ ) {
+
+        // NOTE: The for loop below looks for *it inside topiclist
+        bool found = false;
+        ros::master::V_TopicInfo::iterator f_index = topiclist.begin();
+        ros::master::V_TopicInfo::iterator it2;
+        for( it2 = topiclist.begin(); it2 != topiclist.end(); ++it2 ){
+          if(*it == it2->name){
+            found = true;
+            f_index = it2;
+            break;
+          }
+        }
+
+        if( found ) {
+          ROS_DEBUG( "Found %s in list of topics", it->topic_name.c_str() );
+          ROS_DEBUG( "Branch 1: %s has %d subscribers", it->topic_name.c_str(), getNumberOfSubscribers(it->topic_name) );
+        }
+
+        if( found && getNumberOfSubscribers(it->topic_name) > 1 ) {
+          // topic i is still here and has at least one subscriber (myself is excluded)
+          // remove from vector, no need to look here again as topicnames appear once
+          topiclist.erase(f_index);
+          //*it2 = topiclist.back();
+          //topiclist.pop_back();
+        }
+        // If we need to make a distinction between topic not exists and no subs:
+        //else if( it2 == topiclist.end() ) {
+        //  // DO something about topic disappeared
+        //}
+        else if(it->subscribed){
+          // the topic does not exist any more or the
+          it->subscriber.shutdown();
+          it->subscribed = false;
+          ROS_INFO( "Unsubscribed from %s", it->topic_name.c_str() );
+        }
+      }
+      // now add what's left of the topiclist to my topics
+      for( ros::master::V_TopicInfo::iterator q = topiclist.begin(); q != topiclist.end(); ++q ) {
+        ROS_DEBUG( "Branch 2: %s has %d subscribers", q->name.c_str(), getNumberOfSubscribers(q->name) );
+
+        // check if this topic should be excluded
+        bool exclude_this = false;
+        for(unsigned i=0;i<excluded_topics.size();i++){
+          if(q->name.compare(excluded_topics[i]) == 0){
+            exclude_this = true;
+            break;
+          }
+        }
+
+        if( !exclude_this ) {
+          // TODO think of a strategy when a topic is being published from my machine and another one!
+          if(myMachinePublishes(q->name) && getNumberOfSubscribers(q->name) >= 1){
+            auto it = monitored_topics.begin();
+            for(; it != monitored_topics.end(); it++ ) {
+              if(it->topic_name == q->name){
+                break;
+              }
+            }
+            if(it == monitored_topics.end()){
+              monitored_topics.emplace_front(q->name);
+              monitored_topics.front().subscriber = n.subscribe(q->name, 1, &topicstats::TopicStats::callback, &monitored_topics.front());
+              monitored_topics.front().subscribed = true;
+            }
+            else{
+              it->subscriber = n.subscribe(q->name, 1, &topicstats::TopicStats::callback, &*it);
+              it->subscribed = true;
+            }
+            ROS_INFO( "Subscribed to %s", q->name.c_str() );
+          }
+        }
+      }
+
+      rostune::MultipleTopicStats mts;
+      mts.hostname = my_hostname;
+      mts.header.stamp = ros::Time::now();
+      double curr_time = mts.header.stamp.toSec();
+
+      for (auto it = monitored_topics.begin(); it != monitored_topics.end(); it++) {
+        if(curr_time-it->start_time > 0){
+          it->bytes_per_second = it->total_bytes / (curr_time-it->start_time);
+          it->avg_msgs_per_sec = it->num_of_messages / (curr_time-it->start_time);
+        }
+        rostune::SingleTopicStats sts;
+        sts.name = it->topic_name;
+        sts.num_of_messages = it->num_of_messages;
+        sts.bytes_per_second = it->bytes_per_second;
+        sts.avg_bytes_per_msg = it->avg_bytes_per_msg;
+        sts.avg_msgs_per_sec = it->avg_msgs_per_sec;
+        sts.total_bytes = it->total_bytes;
+        mts.topics.push_back(sts);
+      }
+
+      mts.topics = mts.topics;
+
+      for (auto it = mts.topics.begin(); it != mts.topics.end(); it++){
+        mts.total_num_of_messages += it->num_of_messages;
+        mts.total_bytes_per_second += it->bytes_per_second;
+        mts.total_avg_msgs_per_sec += it->avg_msgs_per_sec;
+        mts.total_avg_bytes_per_msg += it->avg_bytes_per_msg;
+        mts.total_bytes += it->total_bytes;
+      }
+
+      topicstats_pub.publish(mts);
+
+    }
+
+    if(first_time){
+      std::thread spinner_thread(spinToWin);
+      spinner_thread.detach();
+      first_time = false;
+    }
+
     loop_rate.sleep();
-// %EndTag(RATE_SLEEP)%
-    ++count;
   }
-
-
   return 0;
 }
-// %EndTag(FULLTEXT)%
+
+
+
+
+
 
 /*
-float cputime( int pid )
-{
-  FILE *fp;
-  char buff[255];
-  fp= fopen("/proc/123/stat", "r");
-  if(fp == NULL) {
-    
-  }
-  else {
-    // Based on http://man7.org/linux/man-pages/man5/proc.5.html
-    fscanf( fp, "%d %s %c %d %d %d %d %d %u %lu %lu %lu %lu %lu %lu %lu %lu",
-	         &pid,
-	            &filename,
-	               &state,
-	                  &ppid,
-	                     &procgrp,
-                                &sessionid,
-                                   &tty,
-                                      &termprocgrp,
-                                         &kernelflags,
-                                            &minorfaults,
-                                                &childminorfaults,
-                                                    &majorfaults,
-                                                        &childmajorfaults,
-                                                            &usertime,
-                                                                &systime,
-                                                                    &childrenusertime,
-                                                                        &childrensystime
-	    )
-      fclose( fp );
-  }
+BSD 3-Clause License
+Copyright (c) 2017, NCSR "Demokritos"
+All rights reserved.
 
-  
-}
-*/
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions
+are met:
 
-/*
+ * Redistributions of source code must retain the above copyright
+   notice, this list of conditions and the following disclaimer.
 
-              (14) utime  %lu
-                        Amount of time that this process has been scheduled
-                        in user mode, measured in clock ticks (divide by
-                        sysconf(_SC_CLK_TCK)).  This includes guest time,
-                        guest_time (time spent running a virtual CPU, see
-                        below), so that applications that are not aware of
-                        the guest time field do not lose that time from
-                        their calculations.
+ * Redistributions in binary form must reproduce the above copyright
+   notice, this list of conditions and the following disclaimer in
+   the documentation and/or other materials provided with the
+   distribution.
 
-              (15) stime  %lu
-                        Amount of time that this process has been scheduled
-                        in kernel mode, measured in clock ticks (divide by
-                        sysconf(_SC_CLK_TCK)).
+ * Neither the name of the copyright holder nor the names of its
+   contributors may be used to endorse or promote products derived
+   from this software without specific prior written permission.
 
-              (16) cutime  %ld
-                        Amount of time that this process's waited-for
-                        children have been scheduled in user mode, measured
-                        in clock ticks (divide by sysconf(_SC_CLK_TCK)).
-                        (See also times(2).)  This includes guest time,
-                        cguest_time (time spent running a virtual CPU, see
-                        below).
-
-              (17) cstime  %ld
-                        Amount of time that this process's waited-for
-                        children have been scheduled in kernel mode,
-                        measured in clock ticks (divide by
-                        sysconf(_SC_CLK_TCK)).
-
-              (18) priority  %ld
-                        (Explanation for Linux 2.6) For processes running a
-                        real-time scheduling policy (policy below; see
-                        sched_setscheduler(2)), this is the negated
-                        scheduling priority, minus one; that is, a number in
-                        the range -2 to -100, corresponding to real-time
-                        priorities 1 to 99.  For processes running under a
-                        non-real-time scheduling policy, this is the raw
-                        nice value (setpriority(2)) as represented in the
-                        kernel.  The kernel stores nice values as numbers in
-                        the range 0 (high) to 39 (low), corresponding to the
-                        user-visible nice range of -20 to 19.
-
-                        Before Linux 2.6, this was a scaled value based on
-                        the scheduler weighting given to this process.
-
-              (19) nice  %ld
-                        The nice value (see setpriority(2)), a value in the
-                        range 19 (low priority) to -20 (high priority).
-
-              (20) num_threads  %ld
-                        Number of threads in this process (since Linux 2.6).
-                        Before kernel 2.6, this field was hard coded to 0 as
-                        a placeholder for an earlier removed field.
-
-              (21) itrealvalue  %ld
-                        The time in jiffies before the next SIGALRM is sent
-                        to the process due to an interval timer.  Since
-                        kernel 2.6.17, this field is no longer maintained,
-                        and is hard coded as 0.
-
-              (22) starttime  %llu
-                        The time the process started after system boot.  In
-                        kernels before Linux 2.6, this value was expressed
-                        in jiffies.  Since Linux 2.6, the value is expressed
-                        in clock ticks (divide by sysconf(_SC_CLK_TCK)).
-
-                        The format for this field was %lu before Linux 2.6.
-
-              (23) vsize  %lu
-                        Virtual memory size in bytes.
-
-              (24) rss  %ld
-                        Resident Set Size: number of pages the process has
-                        in real memory.  This is just the pages which count
-                        toward text, data, or stack space.  This does not
-                        include pages which have not been demand-loaded in,
-                        or which are swapped out.
-
-              (25) rsslim  %lu
-                        Current soft limit in bytes on the rss of the
-                        process; see the description of RLIMIT_RSS in
-                        getrlimit(2).
-
-              (26) startcode  %lu  [PT]
-                        The address above which program text can run.
-
-              (27) endcode  %lu  [PT]
-                        The address below which program text can run.
-
-              (28) startstack  %lu  [PT]
-                        The address of the start (i.e., bottom) of the
-                        stack.
-
-              (29) kstkesp  %lu  [PT]
-                        The current value of ESP (stack pointer), as found
-                        in the kernel stack page for the process.
-
-              (30) kstkeip  %lu  [PT]
-                        The current EIP (instruction pointer).
-
-              (31) signal  %lu
-                        The bitmap of pending signals, displayed as a
-                        decimal number.  Obsolete, because it does not
-                        provide information on real-time signals; use
-                        /proc/[pid]/status instead.
-
-              (32) blocked  %lu
-                        The bitmap of blocked signals, displayed as a
-                        decimal number.  Obsolete, because it does not
-                        provide information on real-time signals; use
-                        /proc/[pid]/status instead.
-
-              (33) sigignore  %lu
-                        The bitmap of ignored signals, displayed as a
-                        decimal number.  Obsolete, because it does not
-                        provide information on real-time signals; use
-                        /proc/[pid]/status instead.
-
-              (34) sigcatch  %lu
-                        The bitmap of caught signals, displayed as a decimal
-                        number.  Obsolete, because it does not provide
-                        information on real-time signals; use
-                        /proc/[pid]/status instead.
-
-              (35) wchan  %lu  [PT]
-                        This is the "channel" in which the process is
-                        waiting.  It is the address of a location in the
-                        kernel where the process is sleeping.  The
-                        corresponding symbolic name can be found in
-                        /proc/[pid]/wchan.
-
-              (36) nswap  %lu
-                        Number of pages swapped (not maintained).
-
-              (37) cnswap  %lu
-                        Cumulative nswap for child processes (not
-                        maintained).
-
-              (38) exit_signal  %d  (since Linux 2.1.22)
-                        Signal to be sent to parent when we die.
-
-              (39) processor  %d  (since Linux 2.2.8)
-                        CPU number last executed on.
-
-              (40) rt_priority  %u  (since Linux 2.5.19)
-                        Real-time scheduling priority, a number in the range
-                        1 to 99 for processes scheduled under a real-time
-                        policy, or 0, for non-real-time processes (see
-                        sched_setscheduler(2)).
-
-              (41) policy  %u  (since Linux 2.5.19)
-                        Scheduling policy (see sched_setscheduler(2)).
-                        Decode using the SCHED_* constants in linux/sched.h.
-
-                        The format for this field was %lu before Linux
-                        2.6.22.
-
-              (42) delayacct_blkio_ticks  %llu  (since Linux 2.6.18)
-                        Aggregated block I/O delays, measured in clock ticks
-                        (centiseconds).
-
-              (43) guest_time  %lu  (since Linux 2.6.24)
-                        Guest time of the process (time spent running a
-                        virtual CPU for a guest operating system), measured
-                        in clock ticks (divide by sysconf(_SC_CLK_TCK)).
-
-              (44) cguest_time  %ld  (since Linux 2.6.24)
-                        Guest time of the process's children, measured in
-                        clock ticks (divide by sysconf(_SC_CLK_TCK)).
-
-              (45) start_data  %lu  (since Linux 3.3)  [PT]
-                        Address above which program initialized and
-                        uninitialized (BSS) data are placed.
-
-              (46) end_data  %lu  (since Linux 3.3)  [PT]
-                        Address below which program initialized and
-                        uninitialized (BSS) data are placed.
-
-              (47) start_brk  %lu  (since Linux 3.3)  [PT]
-                        Address above which program heap can be expanded
-                        with brk(2).
-
-              (48) arg_start  %lu  (since Linux 3.5)  [PT]
-                        Address above which program command-line arguments
-                        (argv) are placed.
-
-              (49) arg_end  %lu  (since Linux 3.5)  [PT]
-                        Address below program command-line arguments (argv)
-                        are placed.
-
-              (50) env_start  %lu  (since Linux 3.5)  [PT]
-                        Address above which program environment is placed.
-
-              (51) env_end  %lu  (since Linux 3.5)  [PT]
-                        Address below which program environment is placed.
-
-              (52) exit_code  %d  (since Linux 3.5)  [PT]
-                        The thread's exit status in the form reported by
-                        waitpid(2).
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */

@@ -1,0 +1,18 @@
+<RosType name="rostune/MultipleNodeStats">
+  <rule pattern="nodes.#/cputime" alias="nodes.#/name" substitution="@/cputime" />
+  <rule pattern="nodes.#/cputime_percentage" alias="nodes.#/name" substitution="@/cputime_percentage" />
+  <rule pattern="nodes.#/diffcputime" alias="nodes.#/name" substitution="@/diffcputime" />
+  <rule pattern="nodes.#/diffwalltime" alias="nodes.#/name" substitution="@/diffwalltime" />
+  <rule pattern="nodes.#/all_memory" alias="nodes.#/name" substitution="@/all_memory" />
+  <rule pattern="nodes.#/all_memory_percentage" alias="nodes.#/name" substitution="@/all_memory_percentage" />
+  <rule pattern="nodes.#/resident_memory" alias="nodes.#/name" substitution="@/resident_memory" />
+  <rule pattern="nodes.#/resident_memory_percentage" alias="nodes.#/name" substitution="@/resident_memory_percentage" />
+</RosType>
+
+<RosType name="rostune/MultipleTopicStats">
+  <rule pattern="topics.#/num_of_messages" alias="topics.#/name" substitution="@/num_of_messages" />
+  <rule pattern="topics.#/bytes_per_second" alias="topics.#/name" substitution="@/bytes_per_second" />
+  <rule pattern="topics.#/avg_msgs_per_sec" alias="topics.#/name" substitution="@/avg_msgs_per_sec" />
+  <rule pattern="topics.#/avg_bytes_per_msg" alias="topics.#/name" substitution="@/avg_bytes_per_msg" />
+  <rule pattern="topics.#/total_bytes" alias="topics.#/name" substitution="@/total_bytes" />
+</RosType>

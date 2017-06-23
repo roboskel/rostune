@@ -52,7 +52,7 @@ int getPid( std::string nodeName )
     // 1: statusMessage, string, eg <value>Some message</value>
     // 2: url, string, eg, <value>http://myhost:6666</value>
     int err = static_cast<int>( result[0] );
-    if( err = 1 ) {
+    if( err == 1 ) {
       url = static_cast<std::string>( result[2] );
     }
     else {
@@ -63,8 +63,12 @@ int getPid( std::string nodeName )
     return -1;
   }
 
+  XmlRpc::XmlRpcValue args_;
+  // Check here: http://docs.ros.org/kinetic/api/rosmaster/html/rosmaster.master_api-pysrc.html#apivalidate
+  args_[0] = "rostune"; // Python nodes do not work when args have two arguments! sigh
+
   ros::WallDuration tmout( 5, 0 );
-  if( execute_at( url, "getPid", args, result, payload, true, tmout ) ) {
+  if( execute_at( url, "getPid", args_, result, payload, true, tmout ) ) {
     // results are:
     // 0: error code, int, eg, <value><i4>1</i4></value>. 1 is OK, -1,0 is bad.
     // 1: statusMessage, string, eg <value>Some message</value>
@@ -74,6 +78,7 @@ int getPid( std::string nodeName )
   else {
     return -1;
   }
+
 }
 
 unsigned long getTotalRAM(){

@@ -396,7 +396,7 @@ int main( int argc, char **argv )
         mts.total_num_of_messages += it->num_of_messages;
         mts.total_bytes_per_second += it->bytes_per_second;
         mts.total_avg_msgs_per_sec += it->avg_msgs_per_sec;
-        mts.total_bytes_per_second += it->avg_bytes_per_msg;
+        mts.total_avg_bytes_per_msg += it->avg_bytes_per_msg;
         mts.total_bytes += it->total_bytes;
       }
 

@@ -2,8 +2,8 @@
 Changelog for package rostune
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+1.0.1 (2017-07-11)
+------------------
 * Release 1.0.0
 * Fixed the mighty python nodes bug! yay!
 * Fixed topic stats

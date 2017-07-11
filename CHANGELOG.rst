@@ -2,8 +2,8 @@
 Changelog for package rostune
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+1.0.2 (2017-07-11)
+------------------
 * Fixed dependencies
 * Contributors: George Stavrinos
 

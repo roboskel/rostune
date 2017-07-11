@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <package>
   <name>rostune</name>
-  <version>1.0.3</version>
+  <version>1.0.4</version>
   <description> rostune is a tool that helps ROS developers distribute their nodes in the most effective way. It collects statistics for topics and nodes, such as CPU and network usage. </description>
 
   <maintainer email="gstavrinos@iit.demokritos.gr">George Stavrinos</maintainer>

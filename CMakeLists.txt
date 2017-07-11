@@ -6,7 +6,7 @@ project(rostune)
 add_definitions(-std=c++11)
 
 
-find_package(catkin REQUIRED COMPONENTS roscpp rospy std_msgs genmsg topic_tools)
+find_package(catkin REQUIRED COMPONENTS std_msgs topic_tools)
 
 add_message_files(DIRECTORY msg FILES SingleNodeStats.msg MultipleNodeStats.msg SingleTopicStats.msg MultipleTopicStats.msg)
 
@@ -18,9 +18,5 @@ include_directories(include ${catkin_INCLUDE_DIRS})
 
 add_executable(rostune src/main.cpp src/nodestats.cpp src/topicstats.cpp)
 target_link_libraries(rostune ${catkin_LIBRARIES})
-add_dependencies(rostune msg_pkg_generate_messages_cpp main_cpp nodestats_cpp nodestats_h topicstats_cpp topicstats_h)
 
-#add_executable(rostune_logger src/logger.cpp)
-#target_link_libraries(rostune_logger ${catkin_LIBRARIES})
-#add_dependencies(rostune_logger msg_pkg_generate_messages_cpp logger_cpp)
 

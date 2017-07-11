@@ -6,7 +6,7 @@ project(rostune)
 add_definitions(-std=c++11)
 
 
-find_package(catkin REQUIRED COMPONENTS std_msgs topic_tools)
+find_package(catkin REQUIRED COMPONENTS std_msgs genmsg topic_tools)
 
 add_message_files(DIRECTORY msg FILES SingleNodeStats.msg MultipleNodeStats.msg SingleTopicStats.msg MultipleTopicStats.msg)
 

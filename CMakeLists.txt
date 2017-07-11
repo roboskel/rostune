@@ -12,11 +12,12 @@ add_message_files(DIRECTORY msg FILES SingleNodeStats.msg MultipleNodeStats.msg 
 
 generate_messages(DEPENDENCIES std_msgs)
 
-catkin_package()
+catkin_package( CATKIN_DEPENDS message_runtime )
 
 include_directories(include ${catkin_INCLUDE_DIRS})
 
 add_executable(rostune src/main.cpp src/nodestats.cpp src/topicstats.cpp)
+add_dependencies(rostune rostune_generate_messages_cpp)
 target_link_libraries(rostune ${catkin_LIBRARIES})
 
 

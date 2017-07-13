@@ -2,6 +2,13 @@
 Changelog for package rostune
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Forthcoming
+-----------
+* Updated package info
+* Package bugtracker fix
+* Package website fix
+* Contributors: George Stavrinos
+
 1.0.5 (2017-07-11)
 ------------------
 * Hopefully fixed dependency issues for all platforms

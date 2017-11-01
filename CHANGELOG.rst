@@ -2,8 +2,8 @@
 Changelog for package rostune
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+1.0.6 (2017-11-01)
+------------------
 * Updated package info
 * Package bugtracker fix
 * Package website fix
